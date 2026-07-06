@@ -1,0 +1,4 @@
+gh-digest
+dist/
+*.test
+*.out
