@@ -22,7 +22,66 @@ import (
 	"time"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
+
+// JSONSchema is the JSON Schema for the --format json output.
+const JSONSchema = `{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "gh-digest",
+  "type": "object",
+  "properties": {
+    "owner": {
+      "type": "string",
+      "description": "GitHub user or org whose repos are summarised"
+    },
+    "generated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when this digest was generated"
+    },
+    "repos": {
+      "type": "array",
+      "description": "Per-repo summary objects",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name":           { "type": "string" },
+          "full_name":      { "type": "string" },
+          "description":   { "type": "string" },
+          "private":       { "type": "boolean" },
+          "archived":      { "type": "boolean" },
+          "visibility":    { "type": "string" },
+          "pushed_at":     { "type": "string", "format": "date-time" },
+          "updated_at":    { "type": "string", "format": "date-time" },
+          "html_url":      { "type": "string", "format": "uri" },
+          "stargazers_count": { "type": "integer" },
+          "open_issues_count": { "type": "integer" },
+          "open_issues":   { "type": "integer" },
+          "open_prs":      { "type": "integer" },
+          "latest_release_tag_name": { "type": "string" },
+          "latest_release_published_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "stale_flags": {
+      "type": "array",
+      "description": "Staleness signals across the repos",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind":    { "type": "string", "enum": ["repo", "issue", "pr", "release-gap"] },
+          "repo":    { "type": "string" },
+          "detail":  { "type": "string" },
+          "age_days": { "type": "integer" },
+          "link":    { "type": "string", "format": "uri" }
+        },
+        "required": ["kind", "repo", "detail", "age_days"]
+      }
+    }
+  },
+  "required": ["owner", "generated", "repos"]
+}
+`
 
 func main() {
 	var (
@@ -33,6 +92,8 @@ func main() {
 		includeArc  = flag.Bool("include-archived", false, "Include archived repos")
 		maxRepos    = flag.Int("max-repos", 100, "Max repos to inspect")
 		showVersion = flag.Bool("version", false, "Print version and exit")
+		sinceFlag   = flag.String("since", "", "Include only repos pushed on or after this date (YYYY-MM-DD)")
+		jsonSchema  = flag.Bool("json-schema", false, "Print JSON Schema for --format json output and exit")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "gh-digest v%s — summarise GitHub account activity\n\n", version)
@@ -43,6 +104,19 @@ func main() {
 	if *showVersion {
 		fmt.Printf("gh-digest v%s\n", version)
 		return
+	}
+	if *jsonSchema {
+		fmt.Print(JSONSchema)
+		return
+	}
+	var sinceTime time.Time
+	if *sinceFlag != "" {
+		t, err := time.Parse("2006-01-02", *sinceFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: --since expects a date in YYYY-MM-DD format, got %q\n", *sinceFlag)
+			os.Exit(2)
+		}
+		sinceTime = t
 	}
 	if *owner == "" {
 		flag.Usage()
@@ -63,6 +137,9 @@ func main() {
 	var summaries []RepoSummary
 	for _, r := range repos {
 		if r.Archived && !*includeArc {
+			continue
+		}
+		if !sinceTime.IsZero() && r.PushedAt.Before(sinceTime) {
 			continue
 		}
 		s := RepoSummary{Repo: r}

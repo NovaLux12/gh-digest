@@ -28,6 +28,9 @@ gh-digest --owner NovaLux12
 # JSON for piping
 gh-digest --owner NovaLux12 --format json | jq
 
+# Show only repos pushed since a given date (useful for post-vacation digests)
+gh-digest --owner NovaLux12 --since 2026-07-01
+
 # Flag stale items (>30 days no push) and include archived repos
 gh-digest --owner NovaLux12 --stale-days 30 --include-archived
 
@@ -36,6 +39,9 @@ gh-digest --owner NovaLux12 --stale-days 30 --stale-only
 
 # Limit to the 50 most-recently-pushed repos
 gh-digest --owner NovaLux12 --max-repos 50
+
+# Print the JSON Schema for --format json output (useful for downstream tooling)
+gh-digest --json-schema
 ```
 
 ### Auth (optional but recommended)
@@ -85,10 +91,12 @@ _Generated 2026-07-06 01:51 UTC_
 ```
   --owner <name>            GitHub user or org (required)
   --format <fmt>            markdown (default) or json
+  --since <YYYY-MM-DD>      Include only repos pushed on or after this date
   --stale-days <N>          Days before an item is flagged stale (default 30)
   --stale-only              Show only stale items
   --include-archived        Include archived repos (default false)
   --max-repos <N>           Cap on repos inspected (default 100)
+  --json-schema             Print JSON Schema for --format json output and exit
   --version                 Print version and exit
 ```
 
