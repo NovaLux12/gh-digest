@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 // JSONSchema is the JSON Schema for the --format json output.
 const JSONSchema = `{
@@ -58,6 +58,22 @@ const JSONSchema = `{
           "open_issues_count": { "type": "integer" },
           "open_issues":   { "type": "integer" },
           "open_prs":      { "type": "integer" },
+          "open_items":    {
+            "type": "array",
+            "description": "Open issues and PRs (present when --items is passed)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type":       { "type": "string", "enum": ["issue", "pr"] },
+                "number":     { "type": "integer" },
+                "title":      { "type": "string" },
+                "created_at": { "type": "string", "format": "date-time" },
+                "html_url":   { "type": "string", "format": "uri" },
+                "age_days":   { "type": "integer" }
+              },
+              "required": ["type", "number", "title", "created_at", "html_url", "age_days"]
+            }
+          },
           "latest_release_tag_name": { "type": "string" },
           "latest_release_published_at": { "type": "string", "format": "date-time" }
         }
@@ -94,6 +110,7 @@ func main() {
 		showVersion = flag.Bool("version", false, "Print version and exit")
 		sinceFlag   = flag.String("since", "", "Include only repos pushed on or after this date (YYYY-MM-DD)")
 		jsonSchema  = flag.Bool("json-schema", false, "Print JSON Schema for --format json output and exit")
+		itemsFlag   = flag.Bool("items", false, "List open issues/PRs per repo (adds an Open items section / open_items in JSON)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "gh-digest v%s — summarise GitHub account activity\n\n", version)
@@ -143,10 +160,14 @@ func main() {
 			continue
 		}
 		s := RepoSummary{Repo: r}
-		s.OpenIssues, s.OpenPRs, err = client.CountOpenIssuesAndPRs(*owner, r.Name)
+		items, err := client.ListOpenItems(*owner, r.Name)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: %s: %v\n", r.Name, err)
 			continue
+		}
+		s.OpenIssues, s.OpenPRs = splitItems(items)
+		if *itemsFlag {
+			s.OpenItems = items
 		}
 		s.LatestRelease, err = client.LatestRelease(*owner, r.Name)
 		if err != nil && !IsNotFound(err) {
@@ -159,16 +180,16 @@ func main() {
 	switch *format {
 	case "json":
 		out, _ := json.MarshalIndent(struct {
-			Owner     string         `json:"owner"`
-			Generated time.Time      `json:"generated"`
-			Repos     []RepoSummary  `json:"repos"`
-			Stale     []StaleFlag    `json:"stale_flags"`
+			Owner     string        `json:"owner"`
+			Generated time.Time     `json:"generated"`
+			Repos     []RepoSummary `json:"repos"`
+			Stale     []StaleFlag   `json:"stale_flags"`
 		}{*owner, time.Now().UTC(), summaries, FlagStale(summaries, cutoff)}, "", "  ")
 		fmt.Println(string(out))
 	case "markdown":
 		fallthrough
 	default:
-		RenderMarkdown(os.Stdout, *owner, summaries, cutoff, *staleOnly)
+		RenderMarkdown(os.Stdout, *owner, summaries, cutoff, *staleOnly, *itemsFlag)
 	}
 }
 

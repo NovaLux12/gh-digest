@@ -3,17 +3,18 @@ package main
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 )
 
 // StaleFlag describes an item that has gone quiet past the stale threshold.
 type StaleFlag struct {
-	Kind     string // "repo", "issue", "pr", "release-gap"
-	Repo     string
-	Detail   string
-	AgeDays  int
-	Link     string
+	Kind    string // "repo", "issue", "pr", "release-gap"
+	Repo    string
+	Detail  string
+	AgeDays int
+	Link    string
 }
 
 // FlagStale returns the list of staleness signals across all repo summaries.
@@ -49,7 +50,7 @@ func FlagStale(summaries []RepoSummary, cutoff time.Time) []StaleFlag {
 }
 
 // RenderMarkdown writes a human-readable digest to w.
-func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff time.Time, staleOnly bool) {
+func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff time.Time, staleOnly, showItems bool) {
 	fmt.Fprintf(w, "# GitHub digest — %s\n\n", owner)
 	fmt.Fprintf(w, "_Generated %s_\n\n", time.Now().Format("2006-01-02 15:04 UTC"))
 
@@ -87,6 +88,12 @@ func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff t
 		fmt.Fprintln(w)
 	}
 
+	// Open items — between stale signals and the repos table, only when
+	// --items was requested (independent of --stale-only).
+	if showItems {
+		RenderOpenItems(w, summaries)
+	}
+
 	// Per-repo table — sorted by most-recently pushed (stale at bottom).
 	fmt.Fprintln(w, "## Repos")
 	fmt.Fprintln(w)
@@ -99,10 +106,7 @@ func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff t
 			if s.LatestRelease != nil {
 				rel = s.LatestRelease.TagName
 			}
-			desc := strings.TrimSpace(s.Repo.Description)
-			if len(desc) > 60 {
-				desc = desc[:57] + "..."
-			}
+			desc := truncate(strings.TrimSpace(s.Repo.Description), 60)
 			fmt.Fprintf(w, "| [%s](%s) | %s | %d / %d | %s | %s |\n",
 				s.Repo.Name, s.Repo.HTMLURL,
 				s.Repo.PushedAt.Format("2006-01-02"),
@@ -119,10 +123,7 @@ func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff t
 			if s.LatestRelease != nil {
 				rel = s.LatestRelease.TagName
 			}
-			desc := strings.TrimSpace(s.Repo.Description)
-			if len(desc) > 60 {
-				desc = desc[:57] + "..."
-			}
+			desc := truncate(strings.TrimSpace(s.Repo.Description), 60)
 			fmt.Fprintf(w, "| [%s](%s) | %s | %d / %d | %s | %s |\n",
 				s.Repo.Name, s.Repo.HTMLURL,
 				s.Repo.PushedAt.Format("2006-01-02"),
@@ -132,4 +133,67 @@ func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff t
 		}
 	}
 	fmt.Fprintln(w)
+}
+
+// RenderOpenItems writes the "Open items" section: one row per open issue or
+// PR, sorted by repo name then age (oldest first). If no repo has open items
+// the section header is skipped and only "_No open items._" is printed
+// (matching the stale-signals style).
+func RenderOpenItems(w io.Writer, summaries []RepoSummary) {
+	type row struct {
+		repo, repoURL, typ, title, itemURL string
+		num                                int
+		age                                int
+	}
+	var rows []row
+	for _, s := range summaries {
+		for _, it := range s.OpenItems {
+			typ := it.Type
+			if it.Type == "pr" {
+				typ = "PR"
+			}
+			rows = append(rows, row{
+				repo:    s.Repo.Name,
+				repoURL: s.Repo.HTMLURL,
+				typ:     typ,
+				num:     it.Number,
+				title:   truncate(it.Title, 60),
+				itemURL: it.HTMLURL,
+				age:     it.AgeDays,
+			})
+		}
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(w, "_No open items._")
+		fmt.Fprintln(w)
+		return
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].repo != rows[j].repo {
+			return rows[i].repo < rows[j].repo
+		}
+		return rows[i].age > rows[j].age // oldest first
+	})
+	fmt.Fprintln(w, "## Open items")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "| Repo | Type | # | Title | Age |")
+	fmt.Fprintln(w, "|---|---|---|---|---|")
+	for _, r := range rows {
+		fmt.Fprintf(w, "| [%s](%s) | %s | [%d](%s) | %s | %dd |\n",
+			r.repo, r.repoURL, r.typ, r.num, r.itemURL, r.title, r.age)
+	}
+	fmt.Fprintln(w)
+}
+
+// truncate shortens s to at most max characters (runes), appending "..."
+// when it is cut.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-3]) + "..."
 }

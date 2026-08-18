@@ -35,23 +35,25 @@ type Release struct {
 	Prerelease  bool      `json:"prerelease"`
 }
 
-// IssueLite is the minimum we need for stale detection on issues / PRs.
-type IssueLite struct {
+// Item is one open issue or PR fetched from /repos/{owner}/{repo}/issues.
+// Type is "issue" or "pr" (GitHub convention: the pull_request field is
+// present only on PRs); AgeDays is computed from CreatedAt at fetch time.
+type Item struct {
 	Number    int       `json:"number"`
 	Title     string    `json:"title"`
-	State     string    `json:"state"`
 	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
 	HTMLURL   string    `json:"html_url"`
-	IsPR      bool      `json:"-"` // derived
+	Type      string    `json:"type"`     // "issue" | "pr"
+	AgeDays   int       `json:"age_days"` // days since CreatedAt
 }
 
 // RepoSummary aggregates the per-repo data after we've collected it.
 type RepoSummary struct {
-	Repo            Repo
-	OpenIssues      int
-	OpenPRs         int
-	LatestRelease   *Release
+	Repo             Repo
+	OpenIssues       int
+	OpenPRs          int
+	OpenItems        []Item `json:"open_items,omitempty"`
+	LatestRelease    *Release
 	LatestReleaseErr string
 }
 
@@ -158,33 +160,79 @@ func (c *Client) ListRepos(owner string, maxRepos int) ([]Repo, error) {
 	return all, nil
 }
 
-// CountOpenIssuesAndPRs returns (open issues, open PRs) for a repo.
-// GitHub's /issues endpoint returns both issues and PRs; we filter PRs by
-// the presence of a pull_request field on each item.
-func (c *Client) CountOpenIssuesAndPRs(owner, repo string) (int, int, error) {
-	var items []json.RawMessage
+// ListOpenItems returns the open issues and PRs for a repo. GitHub's
+// /issues endpoint returns both in one payload; PRs are identified by the
+// presence of a pull_request field (GitHub convention).
+func (c *Client) ListOpenItems(owner, repo string) ([]Item, error) {
+	var raw []json.RawMessage
 	q := url.Values{}
 	q.Set("state", "open")
 	q.Set("per_page", "100")
-	err := c.get(fmt.Sprintf("/repos/%s/%s/issues", owner, repo), &items, q)
+	err := c.get(fmt.Sprintf("/repos/%s/%s/issues", owner, repo), &raw, q)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	items := make([]Item, 0, len(raw))
+	for _, r := range raw {
+		var probe struct {
+			Number      int              `json:"number"`
+			Title       string           `json:"title"`
+			CreatedAt   time.Time        `json:"created_at"`
+			HTMLURL     string           `json:"html_url"`
+			PullRequest *json.RawMessage `json:"pull_request"`
+		}
+		if err := json.Unmarshal(r, &probe); err != nil {
+			continue
+		}
+		it := Item{
+			Number:    probe.Number,
+			Title:     probe.Title,
+			CreatedAt: probe.CreatedAt,
+			HTMLURL:   probe.HTMLURL,
+			AgeDays:   ageDays(probe.CreatedAt, now),
+		}
+		if probe.PullRequest != nil {
+			it.Type = "pr"
+		} else {
+			it.Type = "issue"
+		}
+		items = append(items, it)
+	}
+	return items, nil
+}
+
+// CountOpenIssuesAndPRs returns (open issues, open PRs) for a repo, derived
+// from the same single /issues fetch used by ListOpenItems (no double-fetch).
+func (c *Client) CountOpenIssuesAndPRs(owner, repo string) (int, int, error) {
+	items, err := c.ListOpenItems(owner, repo)
 	if err != nil {
 		return 0, 0, err
 	}
-	issues, prs := 0, 0
-	for _, raw := range items {
-		var probe struct {
-			PullRequest *json.RawMessage `json:"pull_request"`
-		}
-		if err := json.Unmarshal(raw, &probe); err != nil {
-			continue
-		}
-		if probe.PullRequest != nil {
+	issues, prs := splitItems(items)
+	return issues, prs, nil
+}
+
+// splitItems classifies a set of open items into (issues, PRs).
+func splitItems(items []Item) (issues, prs int) {
+	for _, it := range items {
+		if it.Type == "pr" {
 			prs++
 		} else {
 			issues++
 		}
 	}
-	return issues, prs, nil
+	return issues, prs
+}
+
+// ageDays returns the whole days elapsed between createdAt and now.
+// Future timestamps clamp to 0.
+func ageDays(createdAt, now time.Time) int {
+	d := int(now.Sub(createdAt).Hours() / 24)
+	if d < 0 {
+		return 0
+	}
+	return d
 }
 
 // LatestRelease returns the most recent non-draft release, or nil if the repo

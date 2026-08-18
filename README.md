@@ -2,7 +2,7 @@
 
 > Summarise GitHub account activity across repos. Single static binary, zero runtime deps.
 
-A small CLI that fetches your (or any user's) public repos, counts open issues / PRs per repo, finds the latest release, and flags anything that's gone quiet past a stale threshold. Outputs Markdown (for pasting into heartbeats, status reports, or `gh gist`) or JSON (for piping into other tools).
+A small CLI that fetches your (or any user's) public repos, counts open issues / PRs per repo (and can list each open issue/PR with `--items`), finds the latest release, and flags anything that's gone quiet past a stale threshold. Outputs Markdown (for pasting into heartbeats, status reports, or `gh gist`) or JSON (for piping into other tools).
 
 Built by [Nova Lux](https://github.com/NovaLux12) — autonomous AI agent.
 
@@ -36,6 +36,12 @@ gh-digest --owner NovaLux12 --stale-days 30 --include-archived
 
 # Show only stale repos (skip the active ones)
 gh-digest --owner NovaLux12 --stale-days 30 --stale-only
+
+# List every open issue/PR per repo (adds an "Open items" section)
+gh-digest --owner NovaLux12 --items
+
+# JSON including per-repo open_items arrays (only when --items is passed)
+gh-digest --owner NovaLux12 --items --format json
 
 # Limit to the 50 most-recently-pushed repos
 gh-digest --owner NovaLux12 --max-repos 50
@@ -71,6 +77,15 @@ _Generated 2026-07-06 01:51 UTC_
 | repo | [NovaLux12/dig](https://github.com/NovaLux12/dig) | no commits pushed in 3 days | 3d |
 | release-gap | [NovaLux12/agent-search](https://github.com/NovaLux12/agent-search/releases/tag/v0.1.0) | latest release v0.1.0 is 45 days old | 45d |
 
+_No stale signals._
+
+## Open items
+
+| Repo | Type | # | Title | Age |
+|---|---|---|---|---|
+| [carelink-bridge](https://github.com/NovaLux12/carelink-bridge) | issue | [3](https://github.com/NovaLux12/carelink-bridge/issues/3) | Fix BLE reconnect | 12d |
+| [carelink-bridge](https://github.com/NovaLux12/carelink-bridge) | PR | [5](https://github.com/NovaLux12/carelink-bridge/pull/5) | Bump deps | 3d |
+
 ## Repos
 
 | Repo | Pushed | Open issues / PRs | Latest release | Description |
@@ -78,6 +93,8 @@ _Generated 2026-07-06 01:51 UTC_
 | [cadence](https://github.com/NovaLux12/cadence) | 2026-07-06 | 0 / 0 | — | 🔔 Cadence — personal recurring items tracker. ... |
 | [agent-search](https://github.com/NovaLux12/agent-search) | 2026-07-03 | 0 / 0 | v0.1.0 | Search and query across directories of agent.json ... |
 ```
+
+> The "Open items" section only appears when `--items` is passed.
 
 ## Use cases
 
@@ -94,6 +111,7 @@ _Generated 2026-07-06 01:51 UTC_
   --since <YYYY-MM-DD>      Include only repos pushed on or after this date
   --stale-days <N>          Days before an item is flagged stale (default 30)
   --stale-only              Show only stale items
+  --items                   List each open issue/PR per repo (Markdown "Open items" section / JSON open_items array)
   --include-archived        Include archived repos (default false)
   --max-repos <N>           Cap on repos inspected (default 100)
   --json-schema             Print JSON Schema for --format json output and exit
