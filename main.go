@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 // JSONSchema is the JSON Schema for the --format json output.
 const JSONSchema = `{
@@ -111,6 +111,8 @@ func main() {
 		sinceFlag   = flag.String("since", "", "Include only repos pushed on or after this date (YYYY-MM-DD)")
 		jsonSchema  = flag.Bool("json-schema", false, "Print JSON Schema for --format json output and exit")
 		itemsFlag   = flag.Bool("items", false, "List open issues/PRs per repo (adds an Open items section / open_items in JSON)")
+		failOnStale = flag.Bool("fail-on-stale", false, "Exit with status 2 if any stale signal is found (useful for CI)")
+		sortBy      = flag.String("sort", "pushed", "Sort repos by: pushed (oldest first), name, stars, updated, issues")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "gh-digest v%s — summarise GitHub account activity\n\n", version)
@@ -137,6 +139,12 @@ func main() {
 	}
 	if *owner == "" {
 		flag.Usage()
+		os.Exit(2)
+	}
+	switch *sortBy {
+	case "pushed", "name", "stars", "updated", "issues":
+	default:
+		fmt.Fprintf(os.Stderr, "error: --sort must be one of pushed, name, stars, updated, issues (got %q)\n", *sortBy)
 		os.Exit(2)
 	}
 
@@ -177,6 +185,9 @@ func main() {
 		summaries = append(summaries, s)
 	}
 
+	stale := FlagStale(summaries, cutoff)
+	sorted := sortSummaries(summaries, *sortBy)
+
 	switch *format {
 	case "json":
 		out, _ := json.MarshalIndent(struct {
@@ -184,12 +195,16 @@ func main() {
 			Generated time.Time     `json:"generated"`
 			Repos     []RepoSummary `json:"repos"`
 			Stale     []StaleFlag   `json:"stale_flags"`
-		}{*owner, time.Now().UTC(), summaries, FlagStale(summaries, cutoff)}, "", "  ")
+		}{*owner, time.Now().UTC(), sorted, stale}, "", "  ")
 		fmt.Println(string(out))
 	case "markdown":
 		fallthrough
 	default:
-		RenderMarkdown(os.Stdout, *owner, summaries, cutoff, *staleOnly, *itemsFlag)
+		RenderMarkdown(os.Stdout, *owner, sorted, cutoff, *staleOnly, *itemsFlag, *sortBy)
+	}
+	if *failOnStale && len(stale) > 0 {
+		fmt.Fprintf(os.Stderr, "fail-on-stale: %d stale signal(s) detected\n", len(stale))
+		os.Exit(2)
 	}
 }
 
@@ -216,14 +231,44 @@ func pad(s string, w int) string {
 }
 
 func sortByStaleness(s []RepoSummary) []RepoSummary {
+	return sortSummaries(s, "pushed")
+}
+
+// sortSummaries returns a copy of s sorted by the requested key.
+// Valid keys: pushed (oldest first), name (A-Z), stars (desc), updated (newest first), issues (most open issues first).
+func sortSummaries(s []RepoSummary, sortBy string) []RepoSummary {
 	out := append([]RepoSummary(nil), s...)
 	sort.Slice(out, func(i, j int) bool {
-		ai := out[i].Repo.PushedAt
-		aj := out[j].Repo.PushedAt
-		if ai.Equal(aj) {
+		switch sortBy {
+		case "name":
 			return out[i].Repo.Name < out[j].Repo.Name
+		case "stars":
+			if out[i].Repo.Stargazers == out[j].Repo.Stargazers {
+				return out[i].Repo.Name < out[j].Repo.Name
+			}
+			return out[i].Repo.Stargazers > out[j].Repo.Stargazers
+		case "updated":
+			if out[i].Repo.UpdatedAt.Equal(out[j].Repo.UpdatedAt) {
+				return out[i].Repo.Name < out[j].Repo.Name
+			}
+			return out[i].Repo.UpdatedAt.After(out[j].Repo.UpdatedAt)
+		case "issues":
+			ai := out[i].OpenIssues + out[i].OpenPRs
+			aj := out[j].OpenIssues + out[j].OpenPRs
+			if ai == aj {
+				return out[i].Repo.Name < out[j].Repo.Name
+			}
+			return ai > aj
+		case "pushed":
+			fallthrough
+		default:
+			ai := out[i].Repo.PushedAt
+			aj := out[j].Repo.PushedAt
+			if ai.Equal(aj) {
+				return out[i].Repo.Name < out[j].Repo.Name
+			}
+			return ai.Before(aj)
 		}
-		return ai.Before(aj)
 	})
 	return out
 }

@@ -42,9 +42,15 @@ gh-digest --owner NovaLux12 --items
 
 # JSON including per-repo open_items arrays (only when --items is passed)
 gh-digest --owner NovaLux12 --items --format json
-
 # Limit to the 50 most-recently-pushed repos
 gh-digest --owner NovaLux12 --max-repos 50
+
+# Fleet health gate — exit 2 if any stale signal (use in CI)
+gh-digest --owner my-org --stale-days 14 --fail-on-stale
+
+# Sort repos for triage
+gh-digest --owner NovaLux12 --sort stars   # most starred first
+gh-digest --owner NovaLux12 --sort name    # alphabetical
 
 # Print the JSON Schema for --format json output (useful for downstream tooling)
 gh-digest --json-schema
@@ -102,6 +108,7 @@ _No stale signals._
 - **Maintainer dashboards** — run on a cron, archive the JSON, build a Grafana chart of open issues over time.
 - **Org watch** — `--owner some-other-org` to monitor an external account you depend on.
 - **Pre-trip check** — see what's outstanding before you go offline for a few days.
+- **Fleet Health / CI gate** — `--fail-on-stale --stale-days 14` in CI to block merges when repos go stale.
 
 ## Flags
 
@@ -112,6 +119,8 @@ _No stale signals._
   --stale-days <N>          Days before an item is flagged stale (default 30)
   --stale-only              Show only stale items
   --items                   List each open issue/PR per repo (Markdown "Open items" section / JSON open_items array)
+  --sort <key>              Sort repos: pushed (oldest first, default), name, stars, updated, issues
+  --fail-on-stale           Exit 2 if any stale signal is found (useful for CI / Fleet Health gate)
   --include-archived        Include archived repos (default false)
   --max-repos <N>           Cap on repos inspected (default 100)
   --json-schema             Print JSON Schema for --format json output and exit

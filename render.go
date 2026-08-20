@@ -50,7 +50,7 @@ func FlagStale(summaries []RepoSummary, cutoff time.Time) []StaleFlag {
 }
 
 // RenderMarkdown writes a human-readable digest to w.
-func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff time.Time, staleOnly, showItems bool) {
+func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff time.Time, staleOnly, showItems bool, sortBy string) {
 	fmt.Fprintf(w, "# GitHub digest — %s\n\n", owner)
 	fmt.Fprintf(w, "_Generated %s_\n\n", time.Now().Format("2006-01-02 15:04 UTC"))
 
@@ -95,11 +95,12 @@ func RenderMarkdown(w io.Writer, owner string, summaries []RepoSummary, cutoff t
 	}
 
 	// Per-repo table — sorted by most-recently pushed (stale at bottom).
+	// Per-repo table — sorted per --sort flag (pushed = oldest stale first).
 	fmt.Fprintln(w, "## Repos")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "| Repo | Pushed | Open issues / PRs | Latest release | Description |")
 	fmt.Fprintln(w, "|---|---|---|---|---|")
-	rows := sortByStaleness(summaries)
+	rows := sortSummaries(summaries, sortBy)
 	if !staleOnly {
 		for _, s := range rows {
 			rel := "—"

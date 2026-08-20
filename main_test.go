@@ -107,13 +107,102 @@ func TestSortByStaleness(t *testing.T) {
 func TestRenderMarkdownIncludesOwner(t *testing.T) {
 	var sb strings.Builder
 	summaries := []RepoSummary{{Repo: Repo{Name: "demo", FullName: "owner/demo", HTMLURL: "https://x", PushedAt: time.Now()}}}
-	RenderMarkdown(&sb, "owner", summaries, time.Now().AddDate(0, 0, -30), false, false)
+	RenderMarkdown(&sb, "owner", summaries, time.Now().AddDate(0, 0, -30), false, false, "pushed")
 	out := sb.String()
 	if !strings.Contains(out, "# GitHub digest — owner") {
 		t.Error("missing digest header")
 	}
 	if !strings.Contains(out, "[demo](https://x)") {
 		t.Error("missing repo link in table")
+	}
+}
+
+func TestSortSummaries(t *testing.T) {
+	now := time.Now()
+	summaries := []RepoSummary{
+		{Repo: Repo{Name: "beta", PushedAt: now.AddDate(0, 0, -1), UpdatedAt: now.AddDate(0, 0, -1), Stargazers: 5}, OpenIssues: 1, OpenPRs: 1},
+		{Repo: Repo{Name: "alpha", PushedAt: now.AddDate(0, 0, -10), UpdatedAt: now.AddDate(0, 0, -5), Stargazers: 10}, OpenIssues: 3, OpenPRs: 0},
+		{Repo: Repo{Name: "gamma", PushedAt: now.AddDate(0, 0, -5), UpdatedAt: now.AddDate(0, 0, -2), Stargazers: 20}, OpenIssues: 0, OpenPRs: 0},
+	}
+	// name
+	got := sortSummaries(summaries, "name")
+	if got[0].Repo.Name != "alpha" || got[1].Repo.Name != "beta" || got[2].Repo.Name != "gamma" {
+		t.Errorf("sort name: got %v", []string{got[0].Repo.Name, got[1].Repo.Name, got[2].Repo.Name})
+	}
+	// stars desc
+	got = sortSummaries(summaries, "stars")
+	if got[0].Repo.Name != "gamma" || got[1].Repo.Name != "alpha" || got[2].Repo.Name != "beta" {
+		t.Errorf("sort stars: got %v", []string{got[0].Repo.Name, got[1].Repo.Name, got[2].Repo.Name})
+	}
+	// pushed oldest first
+	got = sortSummaries(summaries, "pushed")
+	if got[0].Repo.Name != "alpha" || got[2].Repo.Name != "beta" {
+		t.Errorf("sort pushed: got %v", []string{got[0].Repo.Name, got[1].Repo.Name, got[2].Repo.Name})
+	}
+	// updated newest first
+	got = sortSummaries(summaries, "updated")
+	if got[0].Repo.Name != "beta" || got[1].Repo.Name != "gamma" || got[2].Repo.Name != "alpha" {
+		t.Errorf("sort updated: got %v", []string{got[0].Repo.Name, got[1].Repo.Name, got[2].Repo.Name})
+	}
+	// issues most first
+	got = sortSummaries(summaries, "issues")
+	if got[0].Repo.Name != "alpha" || got[1].Repo.Name != "beta" || got[2].Repo.Name != "gamma" {
+		t.Errorf("sort issues: got %v", []string{got[0].Repo.Name, got[1].Repo.Name, got[2].Repo.Name})
+	}
+	// unknown defaults to pushed
+	got = sortSummaries(summaries, "bogus")
+	if got[0].Repo.Name != "alpha" {
+		t.Errorf("sort unknown should default to pushed, got %v", got[0].Repo.Name)
+	}
+}
+
+func TestFailOnStaleDetection(t *testing.T) {
+	now := time.Now()
+	cutoff := now.AddDate(0, 0, -30)
+	oldPush := cutoff.AddDate(0, 0, -5)
+	freshPush := now.AddDate(0, 0, -2)
+	summaries := []RepoSummary{
+		{Repo: Repo{FullName: "owner/old", PushedAt: oldPush, HTMLURL: "https://x/old"}},
+		{Repo: Repo{FullName: "owner/fresh", PushedAt: freshPush, HTMLURL: "https://x/fresh"}},
+	}
+	stale := FlagStale(summaries, cutoff)
+	if len(stale) == 0 {
+		t.Fatal("expected stale signals for old repo")
+	}
+	// Simulate --fail-on-stale logic: should trigger when stale non-empty
+	failOnStale := true
+	shouldFail := failOnStale && len(stale) > 0
+	if !shouldFail {
+		t.Error("expected fail-on-stale to trigger")
+	}
+	// No stale -> should not fail
+	summaries2 := []RepoSummary{{Repo: Repo{FullName: "owner/fresh", PushedAt: freshPush, HTMLURL: "https://x/fresh"}}}
+	stale2 := FlagStale(summaries2, cutoff)
+	if len(stale2) != 0 {
+		t.Fatalf("expected no stale, got %d", len(stale2))
+	}
+	shouldFail2 := failOnStale && len(stale2) > 0
+	if shouldFail2 {
+		t.Error("should not fail when no stale signals")
+	}
+}
+
+func TestRenderMarkdownSort(t *testing.T) {
+	now := time.Now()
+	summaries := []RepoSummary{
+		{Repo: Repo{Name: "beta", FullName: "owner/beta", HTMLURL: "https://x/beta", PushedAt: now.AddDate(0, 0, -1)}},
+		{Repo: Repo{Name: "alpha", FullName: "owner/alpha", HTMLURL: "https://x/alpha", PushedAt: now.AddDate(0, 0, -10)}},
+	}
+	var sb strings.Builder
+	RenderMarkdown(&sb, "owner", summaries, now.AddDate(0, 0, -30), false, false, "name")
+	out := sb.String()
+	alphaIdx := strings.Index(out, "alpha")
+	betaIdx := strings.Index(out, "beta")
+	if alphaIdx == -1 || betaIdx == -1 {
+		t.Fatalf("missing repos in output: %q", out)
+	}
+	if alphaIdx > betaIdx {
+		t.Error("expected alpha before beta when sorted by name")
 	}
 }
 
@@ -422,10 +511,9 @@ func TestRenderMarkdownItemsGating(t *testing.T) {
 		},
 	}
 	cutoff := now.AddDate(0, 0, -30)
-
 	var withSB, withoutSB strings.Builder
-	RenderMarkdown(&withSB, "owner", summaries, cutoff, false, true)
-	RenderMarkdown(&withoutSB, "owner", summaries, cutoff, false, false)
+	RenderMarkdown(&withSB, "owner", summaries, cutoff, false, true, "pushed")
+	RenderMarkdown(&withoutSB, "owner", summaries, cutoff, false, false, "pushed")
 
 	withOut := withSB.String()
 	if !strings.Contains(withOut, "## Open items") {
