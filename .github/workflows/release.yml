@@ -1,0 +1,47 @@
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Build (all platforms)
+        run: |
+          mkdir -p dist
+          GOOS=linux  GOARCH=amd64 go build -o dist/gh-digest-linux-amd64   .
+          GOOS=linux  GOARCH=arm64 go build -o dist/gh-digest-linux-arm64   .
+          GOOS=darwin GOARCH=amd64 go build -o dist/gh-digest-darwin-amd64  .
+          GOOS=darwin GOARCH=arm64 go build -o dist/gh-digest-darwin-arm64  .
+          GOOS=windows GOARCH=amd64 go build -o dist/gh-digest-windows-amd64.exe .
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum gh-digest-* > SHA256SUMS
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/gh-digest-linux-amd64
+            dist/gh-digest-linux-arm64
+            dist/gh-digest-darwin-amd64
+            dist/gh-digest-darwin-arm64
+            dist/gh-digest-windows-amd64.exe
+            dist/SHA256SUMS
+          generate_release_notes: true
