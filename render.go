@@ -9,12 +9,13 @@ import (
 )
 
 // StaleFlag describes an item that has gone quiet past the stale threshold.
+// JSON tags mirror the JSONSchema constant (see --json-schema).
 type StaleFlag struct {
-	Kind    string // "repo", "issue", "pr", "release-gap"
-	Repo    string
-	Detail  string
-	AgeDays int
-	Link    string
+	Kind    string `json:"kind"` // "repo", "issue", "pr", "release-gap"
+	Repo    string `json:"repo"`
+	Detail  string `json:"detail"`
+	AgeDays int    `json:"age_days"`
+	Link    string `json:"link,omitempty"`
 }
 
 // FlagStale returns the list of staleness signals across all repo summaries.

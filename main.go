@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.3.1"
+const version = "0.3.2"
 
 // JSONSchema is the JSON Schema for the --format json output.
 const JSONSchema = `{
@@ -75,7 +75,8 @@ const JSONSchema = `{
             }
           },
           "latest_release_tag_name": { "type": "string" },
-          "latest_release_published_at": { "type": "string", "format": "date-time" }
+          "latest_release_published_at": { "type": "string", "format": "date-time" },
+          "latest_release_err": { "type": "string", "description": "Set when the latest release lookup failed (non-fatal)" }
         }
       }
     },
@@ -98,6 +99,53 @@ const JSONSchema = `{
   "required": ["owner", "generated", "repos"]
 }
 `
+
+type repoJSON struct {
+	Name                     string     `json:"name"`
+	FullName                 string     `json:"full_name"`
+	Description              string     `json:"description"`
+	Private                  bool       `json:"private"`
+	Archived                 bool       `json:"archived"`
+	Visibility               string     `json:"visibility"`
+	PushedAt                 time.Time  `json:"pushed_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+	HTMLURL                  string     `json:"html_url"`
+	Stargazers               int        `json:"stargazers_count"`
+	OpenIssuesCount          int        `json:"open_issues_count"`
+	OpenIssues               int        `json:"open_issues"`
+	OpenPRs                  int        `json:"open_prs"`
+	OpenItems                []Item     `json:"open_items,omitempty"`
+	LatestReleaseTagName     string     `json:"latest_release_tag_name,omitempty"`
+	LatestReleasePublishedAt *time.Time `json:"latest_release_published_at,omitempty"`
+	LatestReleaseErr         string     `json:"latest_release_err,omitempty"`
+}
+
+// newRepoJSON maps a RepoSummary to the flattened, schema-conformant JSON view.
+func newRepoJSON(s RepoSummary) repoJSON {
+	out := repoJSON{
+		Name:             s.Repo.Name,
+		FullName:         s.Repo.FullName,
+		Description:      s.Repo.Description,
+		Private:          s.Repo.Private,
+		Archived:         s.Repo.Archived,
+		Visibility:       s.Repo.Visibility,
+		PushedAt:         s.Repo.PushedAt,
+		UpdatedAt:        s.Repo.UpdatedAt,
+		HTMLURL:          s.Repo.HTMLURL,
+		Stargazers:       s.Repo.Stargazers,
+		OpenIssuesCount:  s.Repo.OpenIssues,
+		OpenIssues:       s.OpenIssues,
+		OpenPRs:          s.OpenPRs,
+		OpenItems:        s.OpenItems,
+		LatestReleaseErr: s.LatestReleaseErr,
+	}
+	if s.LatestRelease != nil {
+		out.LatestReleaseTagName = s.LatestRelease.TagName
+		ts := s.LatestRelease.PublishedAt
+		out.LatestReleasePublishedAt = &ts
+	}
+	return out
+}
 
 func main() {
 	var (
@@ -190,12 +238,18 @@ func main() {
 
 	switch *format {
 	case "json":
+		reposJSON := make([]repoJSON, 0, len(sorted))
+		for _, s := range sorted {
+			reposJSON = append(reposJSON, newRepoJSON(s))
+		}
+		staleJSON := make([]StaleFlag, 0, len(stale))
+		staleJSON = append(staleJSON, stale...)
 		out, _ := json.MarshalIndent(struct {
-			Owner     string        `json:"owner"`
-			Generated time.Time     `json:"generated"`
-			Repos     []RepoSummary `json:"repos"`
-			Stale     []StaleFlag   `json:"stale_flags"`
-		}{*owner, time.Now().UTC(), sorted, stale}, "", "  ")
+			Owner     string      `json:"owner"`
+			Generated time.Time   `json:"generated"`
+			Repos     []repoJSON  `json:"repos"`
+			Stale     []StaleFlag `json:"stale_flags"`
+		}{*owner, time.Now().UTC(), reposJSON, staleJSON}, "", "  ")
 		fmt.Println(string(out))
 	case "markdown":
 		fallthrough

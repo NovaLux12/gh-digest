@@ -551,3 +551,60 @@ func TestRenderMarkdownTitleTruncation(t *testing.T) {
 		t.Errorf("raw long title leaked into markdown:\n%s", out)
 	}
 }
+
+// TestJSONOutputMatchesSchema marshals the JSON view types and asserts every
+// emitted key is declared in the JSONSchema constant (regression guard for
+// the v0.3.1 PascalCase output bug).
+func TestJSONOutputMatchesSchema(t *testing.T) {
+	now := time.Now()
+	s := RepoSummary{
+		Repo:          Repo{Name: "demo", FullName: "owner/demo", Description: "d", Private: false, Archived: false, Visibility: "public", PushedAt: now, UpdatedAt: now, HTMLURL: "https://github.com/owner/demo", Stargazers: 1, OpenIssues: 2},
+		OpenIssues:    1,
+		OpenPRs:       2,
+		OpenItems:     []Item{{Number: 3, Title: "t", CreatedAt: now, HTMLURL: "https://github.com/owner/demo/issues/3", Type: "issue", AgeDays: 4}},
+		LatestRelease: &Release{TagName: "v1.0.0", PublishedAt: now},
+	}
+	b, err := json.Marshal(newRepoJSON(s))
+	if err != nil {
+		t.Fatalf("marshal repoJSON: %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var schema map[string]interface{}
+	if err := json.Unmarshal([]byte(JSONSchema), &schema); err != nil {
+		t.Fatalf("JSONSchema invalid: %v", err)
+	}
+	repoProps := schema["properties"].(map[string]interface{})["repos"].(map[string]interface{})["items"].(map[string]interface{})["properties"].(map[string]interface{})
+	for k := range got {
+		if _, ok := repoProps[k]; !ok {
+			t.Errorf("repoJSON emits key %q which is not declared in JSONSchema repos.items.properties", k)
+		}
+	}
+	for _, want := range []string{"name", "full_name", "pushed_at", "open_issues", "open_prs", "latest_release_tag_name", "latest_release_published_at"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("repoJSON missing documented key %q", want)
+		}
+	}
+	// StaleFlag keys must match the stale_flags schema too.
+	sb, err := json.Marshal(StaleFlag{Kind: "repo", Repo: "owner/demo", Detail: "quiet", AgeDays: 31, Link: "https://github.com/owner/demo"})
+	if err != nil {
+		t.Fatalf("marshal StaleFlag: %v", err)
+	}
+	var sgot map[string]interface{}
+	if err := json.Unmarshal(sb, &sgot); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	staleProps := schema["properties"].(map[string]interface{})["stale_flags"].(map[string]interface{})["items"].(map[string]interface{})["properties"].(map[string]interface{})
+	for k := range sgot {
+		if _, ok := staleProps[k]; !ok {
+			t.Errorf("StaleFlag emits key %q which is not declared in JSONSchema stale_flags.items.properties", k)
+		}
+	}
+	for _, want := range []string{"kind", "repo", "detail", "age_days"} {
+		if _, ok := sgot[want]; !ok {
+			t.Errorf("StaleFlag missing documented key %q", want)
+		}
+	}
+}
