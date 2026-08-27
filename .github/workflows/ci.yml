@@ -1,21 +1,10 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.25', '1.26']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.go-version }}
-      - name: Run tests
-        run: go test ./...
+  ci:
+    uses: NovaLux12/.github/.github/workflows/go-ci.yml@main
+
