@@ -33,7 +33,7 @@ cd gh-digest
 go build -o gh-digest .
 ```
 
-Pre-built binaries: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, `windows/arm64`. Each is a static binary with no runtime dependencies.
+Pre-built binaries: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. Each is a static binary with no runtime dependencies.
 
 
 ## Usage
