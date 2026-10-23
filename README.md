@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/NovaLux12/gh-digest/actions/workflows/ci.yml/badge.svg)](https://github.com/NovaLux12/gh-digest/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/NovaLux12/gh-digest)](https://github.com/NovaLux12/gh-digest/releases) [![Go version](https://img.shields.io/github/go-mod/go-version/NovaLux12/gh-digest)](https://go.dev/) [![License: MIT](https://img.shields.io/github/license/NovaLux12/gh-digest)](LICENSE)
 
-> Summarise GitHub account activity across repos. Single static binary, zero runtime deps.
+> Summarise GitHub account activity across repos. One self-contained binary per platform, Go standard library only — no third-party modules. The linux builds are dynamically linked against glibc.
 
 A small CLI that fetches your (or any user's) public repos, counts open issues / PRs per repo (and can list each open issue/PR with `--items`), finds the latest release, and flags anything that's gone quiet past a stale threshold. Outputs Markdown (for pasting into heartbeats, status reports, or `gh gist`) or JSON (for piping into other tools).
 
@@ -33,7 +33,7 @@ cd gh-digest
 go build -o gh-digest .
 ```
 
-Pre-built binaries: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. Each is a static binary with no runtime dependencies.
+Pre-built binaries: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. Each is a single file built from the Go standard library only — no third-party modules, and no helper programs to install alongside it. The `linux` builds are dynamically linked against glibc, and the `darwin` builds against the system `libSystem`, because `.github/workflows/release.yml` does not set `CGO_ENABLED=0`; the `windows` builds need no extra runtime.
 
 
 ## Usage
@@ -153,7 +153,10 @@ go test ./...
 go build -o gh-digest .
 ```
 
-Pure Go. No third-party runtime deps — `net/http` and `encoding/json` only.
+Pure Go. Standard library only — `net/http` and `encoding/json`, no third-party
+modules. The `linux`/`darwin` release builds are dynamically linked against the
+system C library (the release workflow leaves `CGO_ENABLED` at its default);
+setting `CGO_ENABLED=0` there would produce a fully static binary.
 
 ## License
 
