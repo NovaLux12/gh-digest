@@ -21,13 +21,15 @@ jobs:
           cache: true
 
       - name: Build (all platforms)
+        env:
+          CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          GOOS=linux  GOARCH=amd64 go build -o dist/gh-digest-linux-amd64   .
-          GOOS=linux  GOARCH=arm64 go build -o dist/gh-digest-linux-arm64   .
-          GOOS=darwin GOARCH=amd64 go build -o dist/gh-digest-darwin-amd64  .
-          GOOS=darwin GOARCH=arm64 go build -o dist/gh-digest-darwin-arm64  .
-          GOOS=windows GOARCH=amd64 go build -o dist/gh-digest-windows-amd64.exe .
+          GOOS=linux  GOARCH=amd64 CGO_ENABLED=0 go build -o dist/gh-digest-linux-amd64   .
+          GOOS=linux  GOARCH=arm64 CGO_ENABLED=0 go build -o dist/gh-digest-linux-arm64   .
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o dist/gh-digest-darwin-amd64  .
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o dist/gh-digest-darwin-arm64  .
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/gh-digest-windows-amd64.exe .
 
       - name: Checksums
         run: |
